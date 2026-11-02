@@ -1,0 +1,78 @@
+{
+  "description": "Job Router masking vectors: the scan's PII mask (RE2). The server (re2js) and every SDK must turn each `sql` into `masked` with `builtinRules` (in order) plus `patterns`. Copied to the SDK repo as spec/mask_vectors.json.",
+  "builtinRules": [
+    {
+      "pattern": "\\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\\b",
+      "token": "<email>"
+    },
+    {
+      "pattern": "\\+\\d(?:[-.\\s()]{0,2}\\d){6,14}\\b|(?:\\b1[-.\\s])?(?:\\(\\d{3}\\)[-.\\s]?|\\b\\d{3}[-.\\s])\\d{3}[-.\\s]\\d{4}\\b",
+      "token": "<phone>"
+    },
+    {
+      "pattern": "\\b(?:(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(?:25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\b",
+      "token": "<ip>"
+    },
+    {
+      "pattern": "\\b(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}\\b|\\b(?:[0-9a-fA-F]{1,4}:){1,6}(?::[0-9a-fA-F]{1,4}){1,6}\\b|\\b(?:[0-9a-fA-F]{1,4}:){1,7}:|::(?:[0-9a-fA-F]{1,4}:){0,6}[0-9a-fA-F]{1,4}\\b",
+      "token": "<ip>"
+    }
+  ],
+  "customToken": "<redacted>",
+  "vectors": [
+    {
+      "sql": "SELECT * FROM t WHERE email = 'ann@example.com'",
+      "masked": "SELECT * FROM t WHERE email = '<email>'"
+    },
+    {
+      "sql": "WHERE phone IN ('+44 20 7946 0958', '(555) 123-4567')",
+      "masked": "WHERE phone IN ('<phone>', '<phone>')"
+    },
+    {
+      "sql": "WHERE ip = '10.0.0.12' OR ip6 = '2001:db8::1'",
+      "masked": "WHERE ip = '<ip>' OR ip6 = '<ip>'"
+    },
+    {
+      "sql": "SELECT * FROM `proj.ds.ann@example.com` WHERE a = 'ann@example.com'",
+      "masked": "SELECT * FROM `proj.ds.ann@example.com` WHERE a = '<email>'"
+    },
+    {
+      "sql": "WHERE id = 'ACCT-123456'",
+      "masked": "WHERE id = '<redacted>'",
+      "patterns": [
+        "ACCT-\\d+"
+      ]
+    },
+    {
+      "sql": "WHERE id = 'acct-9'",
+      "masked": "WHERE id = '<redacted>'",
+      "patterns": [
+        "(?i)ACCT-\\d+"
+      ]
+    },
+    {
+      "sql": "SELECT 1",
+      "masked": "SELECT 1"
+    },
+    {
+      "sql": "",
+      "masked": ""
+    },
+    {
+      "sql": "a ` b",
+      "masked": "a ` b"
+    },
+    {
+      "sql": "x = '555 123 4567'",
+      "masked": "x = '555 123 4567'"
+    },
+    {
+      "sql": "x = '555 123 4567'",
+      "masked": "x = '<phone>'"
+    },
+    {
+      "sql": "x = '$1 ann@example.com'",
+      "masked": "x = '$1 <email>'"
+    }
+  ]
+}

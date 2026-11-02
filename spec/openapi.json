@@ -1,0 +1,452 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "SlashPeak Job Router",
+    "version": "1.0.0",
+    "description": "Per-job BigQuery routing. On any error, or no answer within the SDK's deadline, the SDK runs the job unchanged."
+  },
+  "servers": [
+    {
+      "url": "https://router.slashpeak.com"
+    }
+  ],
+  "security": [
+    {
+      "routerKey": []
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "routerKey": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A router-scope key (`dp_live_…`)."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": [
+              "code",
+              "message"
+            ],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "unauthorized",
+                  "plan_required",
+                  "rate_limited",
+                  "quota_exceeded",
+                  "payload_too_large",
+                  "client_too_old",
+                  "invalid_request",
+                  "not_found",
+                  "internal_error"
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/v1/decide": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "apiVersion",
+                  "requestId",
+                  "projectId",
+                  "client",
+                  "query"
+                ],
+                "properties": {
+                  "apiVersion": {
+                    "const": 1
+                  },
+                  "requestId": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "jobId": {
+                    "type": "string",
+                    "maxLength": 256
+                  },
+                  "projectId": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "location": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "maskRevision": {
+                    "type": "string",
+                    "maxLength": 64
+                  },
+                  "client": {
+                    "type": "object",
+                    "required": [
+                      "sdk",
+                      "version"
+                    ],
+                    "properties": {
+                      "sdk": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "version": {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      "library": {
+                        "type": "string",
+                        "maxLength": 256
+                      }
+                    }
+                  },
+                  "source": {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "dagId": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "taskId": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "runId": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "dbtNodeId": {
+                        "type": "string",
+                        "maxLength": 256
+                      },
+                      "invocationId": {
+                        "type": "string",
+                        "maxLength": 256
+                      }
+                    }
+                  },
+                  "query": {
+                    "type": "object",
+                    "required": [
+                      "sql"
+                    ],
+                    "properties": {
+                      "sql": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 1048576,
+                        "description": "Masked by the SDK first."
+                      },
+                      "parameterMode": {
+                        "type": "string",
+                        "maxLength": 16
+                      },
+                      "parameters": {
+                        "type": "array",
+                        "maxItems": 1000,
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "maxLength": 128
+                            },
+                            "type": {
+                              "type": "string",
+                              "maxLength": 64
+                            },
+                            "value": {}
+                          }
+                        }
+                      },
+                      "useLegacySql": {
+                        "type": "boolean"
+                      },
+                      "priority": {
+                        "enum": [
+                          "INTERACTIVE",
+                          "BATCH"
+                        ]
+                      },
+                      "useQueryCache": {
+                        "type": "boolean"
+                      },
+                      "maximumBytesBilled": {
+                        "type": "string",
+                        "maxLength": 32
+                      },
+                      "reservation": {
+                        "type": "string",
+                        "maxLength": 512
+                      },
+                      "defaultDataset": {
+                        "type": "object",
+                        "properties": {
+                          "projectId": {
+                            "type": "string",
+                            "maxLength": 128
+                          },
+                          "datasetId": {
+                            "type": "string",
+                            "maxLength": 1024
+                          }
+                        }
+                      },
+                      "destination": {
+                        "type": "object",
+                        "properties": {
+                          "projectId": {
+                            "type": "string",
+                            "maxLength": 128
+                          },
+                          "datasetId": {
+                            "type": "string",
+                            "maxLength": 1024
+                          },
+                          "tableId": {
+                            "type": "string",
+                            "maxLength": 1024
+                          }
+                        }
+                      },
+                      "labels": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string",
+                          "maxLength": 63
+                        }
+                      },
+                      "createSession": {
+                        "type": "boolean"
+                      },
+                      "hasSessionId": {
+                        "type": "boolean"
+                      },
+                      "hasExternalTables": {
+                        "type": "boolean"
+                      },
+                      "dryRun": {
+                        "type": "boolean"
+                      },
+                      "continuous": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A decision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "decisionId",
+                    "action",
+                    "reservation",
+                    "ttlSeconds",
+                    "cacheScope",
+                    "mode",
+                    "explanation"
+                  ],
+                  "properties": {
+                    "decisionId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "Null when no decision was recorded (kill switch)."
+                    },
+                    "action": {
+                      "enum": [
+                        "keep",
+                        "set_reservation"
+                      ]
+                    },
+                    "reservation": {
+                      "type": "string",
+                      "description": "`projects/{p}/locations/{l}/reservations/{r}`, or `none`."
+                    },
+                    "labels": {
+                      "type": "object",
+                      "properties": {
+                        "slashpeak_route": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "ttlSeconds": {
+                      "type": "integer"
+                    },
+                    "cacheScope": {
+                      "enum": [
+                        "sql",
+                        "none"
+                      ]
+                    },
+                    "mode": {
+                      "enum": [
+                        "off",
+                        "shadow",
+                        "active"
+                      ]
+                    },
+                    "explanation": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "An error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/events": {
+      "post": {
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "events"
+                ],
+                "properties": {
+                  "events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "decisionId",
+                        "state"
+                      ],
+                      "properties": {
+                        "decisionId": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "requestId": {
+                          "type": "string",
+                          "maxLength": 256
+                        },
+                        "jobId": {
+                          "type": "string",
+                          "maxLength": 256
+                        },
+                        "state": {
+                          "enum": [
+                            "submitted",
+                            "fallback",
+                            "insert_error",
+                            "done",
+                            "failed"
+                          ]
+                        },
+                        "errorReason": {
+                          "type": "string",
+                          "maxLength": 64,
+                          "pattern": "^[A-Za-z0-9_.-]*$"
+                        },
+                        "observedReservation": {
+                          "type": "string",
+                          "maxLength": 512
+                        },
+                        "decideLatencyMs": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 600000
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Counts of accepted, applied and dropped events."
+          },
+          "default": {
+            "description": "An error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/config": {
+      "get": {
+        "description": "Poll every `pollSeconds`; send `If-None-Match` with the last ETag.",
+        "responses": {
+          "200": {
+            "description": "Policies, kill switch, minimum client, mask rules (built-in + the account's)."
+          },
+          "304": {
+            "description": "Unchanged."
+          }
+        }
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Alive."
+          }
+        }
+      }
+    }
+  }
+}

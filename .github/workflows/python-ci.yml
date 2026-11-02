@@ -1,0 +1,43 @@
+name: python-ci
+
+on:
+  push:
+    branches: [main]
+    paths: ["python/**", "spec/**", ".github/workflows/python-ci.yml"]
+  pull_request:
+    paths: ["python/**", "spec/**", ".github/workflows/python-ci.yml"]
+  schedule:
+    # Weekly, against the newest google-cloud-bigquery.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        bigquery: ["3.17.*", "latest"]
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          if [ "${{ matrix.bigquery }}" = "latest" ]; then
+            pip install -e '.[test]' --upgrade google-cloud-bigquery
+          else
+            pip install -e '.[test]' "google-cloud-bigquery==${{ matrix.bigquery }}"
+          fi
+      - name: Test
+        run: python -m pytest -W ignore::FutureWarning

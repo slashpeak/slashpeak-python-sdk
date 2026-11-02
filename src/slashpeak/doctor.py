@@ -115,7 +115,7 @@ def run_doctor(
             report.bad("google-cloud-bigquery has no Connection.api_request", "upgrade google-cloud-bigquery to 3.x")
 
     if not settings.api_key:
-        report.bad("SLASHPEAK_API_KEY is not set", "create a router key on the Router page and set SLASHPEAK_API_KEY")
+        report.bad("SLASHPEAK_API_KEY is not set", "make an API key with the Job Router permission (Settings → API keys) and set SLASHPEAK_API_KEY")
         return 1
     report.ok("SLASHPEAK_API_KEY is set")
     if not endpoint_is_safe(settings.endpoint):
@@ -142,7 +142,7 @@ def run_doctor(
         config_reply = transport.request("GET", "/v1/config")
         if config_reply.status != 200 or config_reply.body is None:
             code = ((config_reply.body or {}).get("error") or {}).get("code") if config_reply.body else None
-            report.bad(f"key refused (HTTP {config_reply.status}{', ' + code if code else ''})", "create a new router key; read-only API keys do not work here")
+            report.bad(f"key refused (HTTP {config_reply.status}{', ' + code if code else ''})", "use an API key with the Job Router permission (Settings → API keys)")
             return 1
         config: Dict[str, Any] = config_reply.body
         report.ok("key accepted")
@@ -153,7 +153,7 @@ def run_doctor(
             report.bad(f"this SDK is older than the minimum {minimum}", "pip install -U slashpeak")
         policies = [p for p in config.get("policies") or [] if isinstance(p, dict)]
         if not policies:
-            report.note("no router settings yet: open the Router page and pick shadow or active")
+            report.note("no router settings yet: open the Job Router page and pick shadow or active")
         for policy in policies:
             projects = policy.get("projects") or []
             scope = ", ".join(projects) if projects else "all projects of the connection"
@@ -164,7 +164,7 @@ def run_doctor(
         if names:
             _iam_check(names, report, iam_session_factory)
         elif any(p.get("mode") == "active" for p in policies):
-            report.bad("active mode with no allowed reservation", "pick a reservation on the Router page")
+            report.bad("active mode with no allowed reservation", "pick a reservation on the Job Router page")
 
         if latency:
             samples = []

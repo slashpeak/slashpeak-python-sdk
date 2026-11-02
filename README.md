@@ -5,6 +5,8 @@ job costs less. For BigQuery that means on-demand, or a reservation you allowed.
 from your own job history. If the answer is "move", the SDK sets the job's `reservation` field. Your
 SQL, project, location, destination, priority and cache settings never change.
 
+Docs: https://slashpeak.com/docs/product/job-router
+
 Supported today: BigQuery ([google-cloud-bigquery](https://pypi.org/project/google-cloud-bigquery/)).
 More warehouses will come as add-ons to this same package, sharing one key and one connection pool.
 
@@ -41,10 +43,10 @@ slashpeak doctor --latency  # also 20 warm round trips
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SLASHPEAK_API_KEY` | none | A **router** key from the Router page. Without it the SDK does nothing. |
-| `SLASHPEAK_MODE` | `active` | `off`, `shadow` or `active`. The stricter of this and the Router page wins. |
+| `SLASHPEAK_API_KEY` | none | An API key with the **Job Router** permission (SlashPeak → Settings → API keys). Without it the SDK does nothing. |
+| `SLASHPEAK_MODE` | `active` | `off`, `shadow` or `active`. The stricter of this and the Job Router page wins. |
 | `SLASHPEAK_ENDPOINT` | `https://router.slashpeak.com` | HTTPS only. |
-| `SLASHPEAK_SEND_PARAM_VALUES` | on | Send query parameter values (masked first). Off if this or the Router page says off. |
+| `SLASHPEAK_SEND_PARAM_VALUES` | on | Send query parameter values (masked first). Off if this or the Job Router page says off. |
 | `HTTPS_PROXY`, `NO_PROXY` | | Honored. |
 
 ## Safety rules
@@ -57,7 +59,7 @@ slashpeak doctor --latency  # also 20 warm round trips
   4xx for a query that ran and failed, so the SDK re-runs only when the error names the reservation or
   a label. A failed query is never run twice.
 - **PII is masked before anything leaves your process**: emails, phone numbers, IP addresses, and the
-  patterns you add on the Router page. Backtick-quoted names are left alone.
+  patterns you add in SlashPeak → Settings → Privacy. Backtick-quoted names are left alone.
 - **Never touched:** jobs with an explicit `reservation`, dry runs, load, copy, extract and continuous
   jobs, and SQL with `/* slashpeak:off */`. To skip one block of code: `with slashpeak.bigquery.bypass(): ...`
 - **No extra BigQuery calls.** Job results are read from responses the library already fetches.

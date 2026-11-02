@@ -18,7 +18,7 @@ jobs:
           python-version: "3.12"
       - name: Check the tag matches the version
         run: |
-          version=$(python -c "import re;print(re.search(r'\"(.+)\"', open('src/slashpeak/bigquery/_version.py').read()).group(1))")
+          version=$(python -c "import re;print(re.search(r'\"(.+)\"', open('src/slashpeak/_version.py').read()).group(1))")
           test "v${version}" = "${GITHUB_REF_NAME}"
       - name: Test
         run: |

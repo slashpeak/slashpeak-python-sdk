@@ -29,8 +29,8 @@ from collections import OrderedDict
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from slashpeak.bigquery.requests_body import INSERT_PATH, QUERY_PATH, build_decide_request
-from slashpeak.bigquery.router import DecisionCache, Router
-from slashpeak.bigquery.settings import stricter_mode
+from slashpeak._core.router import DecisionCache, Router
+from slashpeak._core.settings import stricter_mode
 
 logger = logging.getLogger("slashpeak.bigquery")
 

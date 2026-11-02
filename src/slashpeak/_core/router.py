@@ -18,12 +18,12 @@ import time
 from collections import OrderedDict
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from slashpeak.bigquery._version import __version__
-from slashpeak.bigquery.mask import Masker, MaskError, builtin_masker, masker_from_config
-from slashpeak.bigquery.settings import Settings, stricter_mode
-from slashpeak.bigquery.transport import Reply, Transport
+from slashpeak._version import __version__
+from slashpeak._core.mask import Masker, MaskError, builtin_masker, masker_from_config
+from slashpeak._core.settings import Settings, stricter_mode
+from slashpeak._core.transport import Reply, Transport
 
-logger = logging.getLogger("slashpeak.bigquery")
+logger = logging.getLogger("slashpeak")
 
 BREAKER_FAILURES = 5
 BREAKER_OPEN_S = 30.0

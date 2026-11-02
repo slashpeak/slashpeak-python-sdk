@@ -39,7 +39,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from slashpeak.bigquery._version import __version__
+from slashpeak._version import __version__
 
 DECIDE_WORKERS = 4
 POOL_SIZE = DECIDE_WORKERS + 2
@@ -59,11 +59,12 @@ class _NoCookies(DefaultCookiePolicy):
 
 
 def _user_agent() -> str:
+    agent = f"slashpeak-python/{__version__}"
     try:
         from google.cloud.bigquery import __version__ as bq_version  # type: ignore[attr-defined]
     except Exception:  # noqa: BLE001
-        bq_version = "unknown"
-    return f"slashpeak-bigquery-python/{__version__} google-cloud-bigquery/{bq_version}"
+        return agent
+    return f"{agent} google-cloud-bigquery/{bq_version}"
 
 
 def build_session(api_key: str) -> requests.Session:

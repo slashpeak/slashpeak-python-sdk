@@ -8,8 +8,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from slashpeak.bigquery import transport as transport_module
-from slashpeak.bigquery.transport import DECIDE_DEADLINE_S, MAX_RESPONSE_BYTES, Transport
+from slashpeak._core import transport as transport_module
+from slashpeak._core.transport import DECIDE_DEADLINE_S, MAX_RESPONSE_BYTES, Transport
 
 
 class Server:
@@ -92,7 +92,7 @@ def test_key_only_in_the_header_and_no_cookies(server):
     assert first["headers"]["Authorization"] == "Bearer secret-key"
     assert "secret-key" not in first["path"]
     assert "Cookie" not in second["headers"]
-    assert second["headers"]["User-Agent"].startswith("slashpeak-bigquery-python/")
+    assert second["headers"]["User-Agent"].startswith("slashpeak-python/")
     t.close()
 
 

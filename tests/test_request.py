@@ -3,7 +3,7 @@
 from typing import Any, Dict
 
 from conftest import insert_body, load_spec
-from slashpeak.bigquery.mask import builtin_masker
+from slashpeak._core.mask import builtin_masker
 from slashpeak.bigquery.requests_body import build_decide_request
 
 OPENAPI = load_spec("openapi.json")

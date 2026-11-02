@@ -1,7 +1,7 @@
 import pytest
 
 from conftest import load_spec
-from slashpeak.bigquery.mask import BUILTIN_RULES, CUSTOM_TOKEN, Masker, MaskError, builtin_masker, masker_from_config
+from slashpeak._core.mask import BUILTIN_RULES, CUSTOM_TOKEN, Masker, MaskError, builtin_masker, masker_from_config
 
 SPEC = load_spec("mask_vectors.json")
 

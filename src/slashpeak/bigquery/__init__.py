@@ -1,56 +1,37 @@
-"""SlashPeak Job Router for google-cloud-bigquery.
+"""SlashPeak Job Router hook for google-cloud-bigquery.
 
     import slashpeak.bigquery
-    slashpeak.bigquery.install()          # every client in this process
+    slashpeak.bigquery.install()          # every BigQuery client in this process
     # or: slashpeak.bigquery.wrap(client)  # one client
 
-Reads ``SLASHPEAK_API_KEY``, ``SLASHPEAK_MODE`` (off | shadow | active),
-``SLASHPEAK_ENDPOINT`` and ``SLASHPEAK_SEND_PARAM_VALUES``. Without a key it
-does nothing. On any error, or no answer within 500 ms, jobs run unchanged.
+``slashpeak.install()`` does the same for every supported library installed.
 """
 
 from __future__ import annotations
 
 import contextlib
-import os
 import threading
 from typing import Any, Callable, Iterator, Optional
 
-from slashpeak.bigquery._version import __version__
+from slashpeak._core import runtime
+from slashpeak._core.settings import Settings
 from slashpeak.bigquery.hook import Hook, _guard, _Pending
-from slashpeak.bigquery.router import Router, register_exit
-from slashpeak.bigquery.settings import Settings, load_settings
 
-__all__ = ["__version__", "install", "uninstall", "wrap", "bypass", "Settings"]
+__all__ = ["install", "uninstall", "wrap", "bypass", "Settings"]
 
+NAME = "bigquery"
 _lock = threading.Lock()
-_router: Optional[Router] = None
-_hook = Hook(lambda: _router)
+_hook = Hook(runtime.current)
 _patched: Optional[tuple] = None  # (class, had_own_attribute, original)
-_FORK_HOOKED = False
 
 
-def _after_fork_in_child() -> None:
+def _reset_after_fork() -> None:
     global _lock
     _lock = threading.Lock()
-    # A lock held by another thread at fork time stays locked in the child: rebuild every one.
     _hook.pending = _Pending()
-    router = _router
-    if router is not None:
-        router.after_fork_in_child()
 
 
-def _ensure_router(settings: Optional[Settings]) -> Router:
-    global _router, _FORK_HOOKED
-    if _router is None or settings is not None:
-        if _router is not None:
-            _router.close(flush_s=0.0)
-        _router = Router(settings or load_settings())
-        register_exit(lambda: _router)
-    if not _FORK_HOOKED and hasattr(os, "register_at_fork"):
-        os.register_at_fork(after_in_child=_after_fork_in_child)
-        _FORK_HOOKED = True
-    return _router
+runtime.on_fork(_reset_after_fork)
 
 
 def _wrapper(original: Callable[..., Any]) -> Callable[..., Any]:
@@ -75,10 +56,10 @@ def _patch_class(cls: type) -> None:
 def install(settings: Optional[Settings] = None) -> bool:
     """Hooks every BigQuery client in this process. True when the hook is on."""
     with _lock:
-        router = _ensure_router(settings)
+        router = runtime.acquire(NAME, settings)
         if not router.settings.usable:
             return False
-        from google.cloud.bigquery import _http  # imported late: the package works without it installed
+        from google.cloud.bigquery import _http  # imported late: `slashpeak` installs without it
 
         _patch_class(_http.Connection)
         router.start()
@@ -88,12 +69,11 @@ def install(settings: Optional[Settings] = None) -> bool:
 def wrap(client: Any, settings: Optional[Settings] = None) -> Any:
     """Hooks one ``bigquery.Client`` only. Returns the same client."""
     with _lock:
-        router = _ensure_router(settings)
+        router = runtime.acquire(NAME, settings)
         if not router.settings.usable:
             return client
         connection = client._connection
-        current = connection.api_request
-        if not getattr(current, "_slashpeak", False):
+        if not getattr(connection.api_request, "_slashpeak", False):
             original = type(connection).api_request
             connection.api_request = _wrapper(original).__get__(connection, type(connection))
         router.start()
@@ -101,8 +81,8 @@ def wrap(client: Any, settings: Optional[Settings] = None) -> Any:
 
 
 def uninstall() -> None:
-    """Removes the process-wide hook and flushes pending events (at most 1 s)."""
-    global _patched, _router
+    """Removes the hook. The shared router closes (events flushed, at most 1 s) when no hook is left."""
+    global _patched
     with _lock:
         if _patched is not None:
             cls, had_own, original = _patched
@@ -111,9 +91,7 @@ def uninstall() -> None:
             elif "api_request" in cls.__dict__:
                 delattr(cls, "api_request")
             _patched = None
-        if _router is not None:
-            _router.close()
-            _router = None
+    runtime.release(NAME)
 
 
 @contextlib.contextmanager

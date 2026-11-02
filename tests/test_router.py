@@ -1,9 +1,9 @@
 import threading
 
 from conftest import decision
-from slashpeak.bigquery.router import BREAKER_FAILURES, BREAKER_OPEN_S, Breaker, DecisionCache, Router, client_at_least
-from slashpeak.bigquery.settings import Settings, load_settings, stricter_mode
-from slashpeak.bigquery.transport import Reply
+from slashpeak._core.router import BREAKER_FAILURES, BREAKER_OPEN_S, Breaker, DecisionCache, Router, client_at_least
+from slashpeak._core.settings import Settings, load_settings, stricter_mode
+from slashpeak._core.transport import Reply
 
 
 class Clock:

@@ -11,7 +11,8 @@ from google.api_core.client_options import ClientOptions  # noqa: E402
 from google.auth.credentials import AnonymousCredentials  # noqa: E402
 
 import slashpeak.bigquery as sdk  # noqa: E402
-from slashpeak.bigquery.settings import Settings  # noqa: E402
+from slashpeak._core import runtime  # noqa: E402
+from slashpeak._core.settings import Settings  # noqa: E402
 
 RES = "projects/admin/locations/US/reservations/etl"
 
@@ -117,7 +118,7 @@ def test_fallback_runs_the_original_job(world):
     assert first["configuration"]["reservation"] == RES
     assert "reservation" not in second["configuration"]
     assert first["jobReference"]["jobId"] == second["jobReference"]["jobId"]
-    sdk._router.flush_events(1.0)
+    runtime.current().flush_events(1.0)
     sent = [e for _, path, body in state["router"] if path == "/v1/events" for e in body["events"]]
     assert [e["state"] for e in sent] == ["fallback"]
 
@@ -139,6 +140,6 @@ def test_query_and_wait_is_routed(world):
     client.query_and_wait("SELECT 4", location="US")
     (body,) = [b for m, p, b in state["bq"] if m == "POST" and p.endswith("/queries")]
     assert body["reservation"] == RES and body["labels"]["slashpeak_route"].startswith("m_")
-    sdk._router.flush_events(1.0)
+    runtime.current().flush_events(1.0)
     sent = [e for _, path, b in state["router"] if path == "/v1/events" for e in b["events"]]
     assert [(e["state"], e.get("jobId")) for e in sent] == [("done", "qj1")]

@@ -6,9 +6,9 @@ from typing import Any, Dict, List, Optional
 
 import pytest
 
-from slashpeak.bigquery.router import Router
-from slashpeak.bigquery.settings import Settings
-from slashpeak.bigquery.transport import Reply
+from slashpeak._core.router import Router
+from slashpeak._core.settings import Settings
+from slashpeak._core.transport import Reply
 
 SPEC = pathlib.Path(__file__).resolve().parents[1] / "spec"
 

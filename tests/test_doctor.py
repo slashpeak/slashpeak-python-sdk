@@ -1,6 +1,6 @@
-from slashpeak.bigquery.doctor import reservation_name, run_doctor
-from slashpeak.bigquery.settings import Settings
-from slashpeak.bigquery.transport import Reply
+from slashpeak.doctor import reservation_name, run_doctor
+from slashpeak._core.settings import Settings
+from slashpeak._core.transport import Reply
 
 
 class T:

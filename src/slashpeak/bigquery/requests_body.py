@@ -14,8 +14,8 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from slashpeak.bigquery._version import __version__
-from slashpeak.bigquery.mask import Masker
+from slashpeak._version import __version__
+from slashpeak._core.mask import Masker
 
 API_VERSION = 1
 MAX_SQL_BYTES = 1024 * 1024

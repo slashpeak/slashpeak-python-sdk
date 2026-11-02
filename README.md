@@ -1,30 +1,33 @@
-# slashpeak-bigquery
+# slashpeak
 
-SlashPeak Job Router for [google-cloud-bigquery](https://pypi.org/project/google-cloud-bigquery/).
-Before each query job starts, the SDK asks the router where the job costs less: on-demand, or a
-reservation you allowed. The router answers from your own job history. If the answer is "move", the
-SDK sets the job's `reservation` field. Your SQL, project, location, destination, priority and cache
-settings never change.
+SlashPeak Job Router for Python. Before each warehouse job starts, the SDK asks the router where the
+job costs less. For BigQuery that means on-demand, or a reservation you allowed. The router answers
+from your own job history. If the answer is "move", the SDK sets the job's `reservation` field. Your
+SQL, project, location, destination, priority and cache settings never change.
+
+Supported today: BigQuery ([google-cloud-bigquery](https://pypi.org/project/google-cloud-bigquery/)).
+More warehouses will come as add-ons to this same package, sharing one key and one connection pool.
 
 ## Install
 
 ```bash
-pip install slashpeak-bigquery
+pip install "slashpeak[bigquery]"
 ```
+
+```python
+import slashpeak
+
+slashpeak.install()  # hooks every supported library that is installed
+```
+
+Or BigQuery only, or one client only:
 
 ```python
 import slashpeak.bigquery
-
-slashpeak.bigquery.install()  # every BigQuery client in this process
-```
-
-Or one client only:
-
-```python
 from google.cloud import bigquery
-import slashpeak.bigquery
 
-client = slashpeak.bigquery.wrap(bigquery.Client())
+slashpeak.bigquery.install()                       # every BigQuery client
+client = slashpeak.bigquery.wrap(bigquery.Client())  # or just this one
 ```
 
 Then check your setup:

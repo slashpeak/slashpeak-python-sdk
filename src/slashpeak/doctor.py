@@ -10,10 +10,10 @@ import statistics
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from slashpeak.bigquery._version import __version__
-from slashpeak.bigquery.router import client_at_least
-from slashpeak.bigquery.settings import Settings, endpoint_is_safe, load_settings
-from slashpeak.bigquery.transport import Transport
+from slashpeak._version import __version__
+from slashpeak._core.router import client_at_least
+from slashpeak._core.settings import Settings, endpoint_is_safe, load_settings
+from slashpeak._core.transport import Transport
 
 RESERVATION_API = "https://bigqueryreservation.googleapis.com/v1"
 USE_PERMISSION = "bigquery.reservations.use"
@@ -102,17 +102,17 @@ def run_doctor(
     """Exit code: 0 when every check passed, 1 otherwise."""
     settings = settings or load_settings()
     report = Report(out)
-    out(f"slashpeak-bigquery {__version__}")
+    out(f"slashpeak {__version__}")
 
     try:
         from google.cloud.bigquery import _http
-
+    except ImportError:
+        report.bad("no supported warehouse library installed", "pip install 'slashpeak[bigquery]'")
+    else:
         if callable(getattr(_http.Connection, "api_request", None)):
             report.ok("google-cloud-bigquery installed; hook point found")
         else:
             report.bad("google-cloud-bigquery has no Connection.api_request", "upgrade google-cloud-bigquery to 3.x")
-    except Exception:  # noqa: BLE001
-        report.bad("google-cloud-bigquery not importable", "pip install google-cloud-bigquery")
 
     if not settings.api_key:
         report.bad("SLASHPEAK_API_KEY is not set", "create a router key on the Router page and set SLASHPEAK_API_KEY")
@@ -150,7 +150,7 @@ def run_doctor(
             report.note("the router is paused for everyone right now (jobs run unchanged)")
         minimum = (config.get("minClient") or {}).get("python")
         if not client_at_least(__version__, minimum):
-            report.bad(f"this SDK is older than the minimum {minimum}", "pip install -U slashpeak-bigquery")
+            report.bad(f"this SDK is older than the minimum {minimum}", "pip install -U slashpeak")
         policies = [p for p in config.get("policies") or [] if isinstance(p, dict)]
         if not policies:
             report.note("no router settings yet: open the Router page and pick shadow or active")

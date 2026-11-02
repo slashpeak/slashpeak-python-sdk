@@ -4,8 +4,8 @@ import pytest
 
 from conftest import RES, FakeConnection, FakeError, decision, insert_body
 from slashpeak.bigquery.hook import Hook
-from slashpeak.bigquery.settings import Settings
-from slashpeak.bigquery.transport import Reply
+from slashpeak._core.settings import Settings
+from slashpeak._core.transport import Reply
 
 
 def run(router, conn, method="POST", path="/projects/p/jobs", data=None):
@@ -43,7 +43,7 @@ def test_shadow_label_only(router, transport):
 
 
 def test_sdk_shadow_never_moves_and_drops_move_label(transport):
-    from slashpeak.bigquery.router import Router
+    from slashpeak._core.router import Router
 
     router = Router(Settings(api_key="k", endpoint="https://x", mode="shadow"), transport=transport)
     router.start = lambda: None
@@ -241,15 +241,16 @@ def test_install_without_key_does_nothing():
 
 def test_fork_child_gets_fresh_locks():
     import slashpeak.bigquery as sdk
+    from slashpeak._core import runtime
 
     sdk.install(Settings(api_key="k", endpoint="https://x"))
-    old_pending, old_router = sdk._hook.pending, sdk._router
+    old_pending, old_router = sdk._hook.pending, runtime.current()
     old_pending._lock.acquire()  # as if another thread held it at fork time
     try:
-        sdk._after_fork_in_child()
+        runtime._after_fork_in_child()
         assert sdk._hook.pending is not old_pending
         sdk._hook.pending.add("j", {"decisionId": "d"})  # would hang on the old lock
-        assert sdk._router is old_router and old_router._threads_pid == -1
+        assert runtime.current() is old_router and old_router._threads_pid == -1
     finally:
         old_pending._lock.release()
         sdk.uninstall()
@@ -269,3 +270,47 @@ def test_query_path_never_reruns_a_query_that_ran(router, transport, message):
     assert len(conn.sent) == 1
     (event,) = events(router)
     assert event["state"] == "insert_error" and "Division" not in str(event)
+
+
+def test_top_level_install_hooks_every_installed_library():
+    pytest.importorskip("google.cloud.bigquery")
+    import slashpeak
+    from google.cloud.bigquery import _http
+
+    assert slashpeak.install(Settings(api_key="k", endpoint="https://x")) == ["bigquery"]
+    assert getattr(_http.Connection.api_request, "_slashpeak", False)
+    slashpeak.uninstall()
+    assert not getattr(_http.Connection.api_request, "_slashpeak", False)
+    assert slashpeak.install(Settings(api_key=None)) == []
+    slashpeak.uninstall()
+
+
+def test_hooks_share_one_router_until_the_last_leaves():
+    from slashpeak._core import runtime
+
+    first = runtime.acquire("bigquery", Settings(api_key="k", endpoint="https://x"))
+    assert runtime.acquire("snowflake") is first  # same pool, config poll and event queue
+    runtime.release("bigquery")
+    assert runtime.current() is first and not first._closed
+    runtime.release("snowflake")
+    assert runtime.current() is None and first._closed
+
+
+def test_missing_library_is_skipped_not_an_error():
+    import slashpeak
+
+    assert slashpeak._has("no_such_parent.child") is False
+    assert slashpeak._has("json") is True
+
+
+def test_same_settings_keep_the_router_new_settings_replace_it():
+    from slashpeak._core import runtime
+
+    settings = Settings(api_key="k", endpoint="https://x")
+    first = runtime.acquire("bigquery", settings)
+    assert runtime.acquire("snowflake", Settings(api_key="k", endpoint="https://x")) is first
+    second = runtime.acquire("snowflake", Settings(api_key="k2", endpoint="https://x"))
+    assert second is not first and first._closed
+    runtime.release("bigquery")
+    runtime.release("snowflake")
+    assert runtime.current() is None

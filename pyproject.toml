@@ -3,9 +3,9 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "slashpeak-bigquery"
+name = "slashpeak"
 dynamic = ["version"]
-description = "SlashPeak Job Router for google-cloud-bigquery: run each query where it costs less."
+description = "SlashPeak Job Router: run each warehouse query where it costs less (BigQuery today)."
 readme = "README.md"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -20,23 +20,23 @@ classifiers = [
   "Topic :: Database",
 ]
 dependencies = [
-  "google-cloud-bigquery>=3.0,<4",
   "requests>=2.25,<3",
   "urllib3>=1.26",
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=7"]
+bigquery = ["google-cloud-bigquery>=3.0,<4"]
+test = ["pytest>=7", "google-cloud-bigquery>=3.0,<4"]
 
 [project.urls]
 Homepage = "https://slashpeak.com"
 Source = "https://github.com/slashpeak/slashpeak-python-sdk"
 
 [project.scripts]
-slashpeak = "slashpeak.bigquery.cli:main"
+slashpeak = "slashpeak.cli:main"
 
 [tool.hatch.version]
-path = "src/slashpeak/bigquery/_version.py"
+path = "src/slashpeak/_version.py"
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "tests", "spec", "README.md", "LICENSE", "SECURITY.md"]

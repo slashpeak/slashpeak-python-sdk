@@ -30,13 +30,16 @@ test = ["pytest>=7"]
 
 [project.urls]
 Homepage = "https://slashpeak.com"
-Source = "https://github.com/slashpeak/slashpeak-sdks"
+Source = "https://github.com/slashpeak/slashpeak-python-sdk"
 
 [project.scripts]
 slashpeak = "slashpeak.bigquery.cli:main"
 
 [tool.hatch.version]
 path = "src/slashpeak/bigquery/_version.py"
+
+[tool.hatch.build.targets.sdist]
+include = ["src", "tests", "spec", "README.md", "LICENSE", "SECURITY.md"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/slashpeak"]

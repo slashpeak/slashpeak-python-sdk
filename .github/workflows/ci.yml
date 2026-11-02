@@ -1,11 +1,11 @@
-name: python-ci
+name: ci
 
 on:
   push:
     branches: [main]
-    paths: ["python/**", "spec/**", ".github/workflows/python-ci.yml"]
+    paths-ignore: ["**.md"]
   pull_request:
-    paths: ["python/**", "spec/**", ".github/workflows/python-ci.yml"]
+    paths-ignore: ["**.md"]
   schedule:
     # Weekly, against the newest google-cloud-bigquery.
     - cron: "17 6 * * 1"
@@ -23,9 +23,6 @@ jobs:
       matrix:
         python: ["3.9", "3.10", "3.11", "3.12", "3.13"]
         bigquery: ["3.17.*", "latest"]
-    defaults:
-      run:
-        working-directory: python
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

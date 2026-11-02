@@ -10,7 +10,7 @@ from slashpeak.bigquery.router import Router
 from slashpeak.bigquery.settings import Settings
 from slashpeak.bigquery.transport import Reply
 
-SPEC = pathlib.Path(__file__).resolve().parents[2] / "spec"
+SPEC = pathlib.Path(__file__).resolve().parents[1] / "spec"
 
 
 def load_spec(name: str) -> Any:

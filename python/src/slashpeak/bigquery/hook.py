@@ -43,6 +43,9 @@ _RESULTS_GET = re.compile(r"^/projects/[^/]+/queries/([^/]+)/?$")
 _REASON = re.compile(r"[^A-Za-z0-9_.-]")
 #: 4xx codes that do not come from our change: timeout, conflict (job exists), rate limit.
 _NO_FALLBACK = {408, 409, 429}
+#: jobs.query reports a query that ran and failed as a 4xx too, so a re-run there could bill twice.
+#: It re-runs only when BigQuery names a field we changed. The message is read here, never sent or logged.
+_OUR_FIELDS = re.compile(r"reservation|label", re.IGNORECASE)
 PENDING_MAX = 10000
 PENDING_TTL_S = 24 * 3600.0
 
@@ -72,6 +75,19 @@ def _reason_of(error: BaseException) -> str:
         code = getattr(error, "code", None)
         reason = f"http_{code}" if isinstance(code, int) else type(error).__name__
     return _REASON.sub("", reason)[:64]
+
+
+def _may_fall_back(kind: str, code: Optional[int], error: BaseException) -> bool:
+    """jobs.insert: a 4xx means no job was made. jobs.query: only when the error names our change."""
+    if code is None or not 400 <= code < 500 or code in _NO_FALLBACK:
+        return False
+    if kind == "insert":
+        return True
+    try:
+        text = str(error)
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(_OUR_FIELDS.search(text))
 
 
 def _status_code(error: BaseException) -> Optional[int]:
@@ -246,7 +262,7 @@ class Hook:
             response = original(conn, *call_args, **call_kwargs)
         except Exception as error:
             code = _status_code(error)
-            if changed is not None and code is not None and 400 <= code < 500 and code not in _NO_FALLBACK:
+            if changed is not None and _may_fall_back(kind, code, error):
                 return self._fallback(router, original, conn, args, kwargs, plan, event, error)
             if event:
                 router.emit({**event, "state": "insert_error", "errorReason": _reason_of(error)})

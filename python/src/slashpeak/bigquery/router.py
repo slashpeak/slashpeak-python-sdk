@@ -9,6 +9,7 @@ from __future__ import annotations
 import atexit
 import hashlib
 import logging
+import math
 import os
 import queue
 import random
@@ -34,6 +35,14 @@ EXIT_FLUSH_S = 1.0
 POLL_MIN_S = 10.0
 POLL_MAX_S = 600.0
 DEFAULT_TTL_S = 60.0
+
+
+def _positive_number(value: Any) -> Optional[float]:
+    """A finite number above 0, else None. JSON from Python's parser may carry NaN or Infinity."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    number = float(value)
+    return number if math.isfinite(number) and number > 0 else None
 
 
 def _version_tuple(value: str) -> Tuple[int, int, int]:
@@ -144,10 +153,8 @@ class DecisionCache:
 def _cache_ttl(decision: Optional[Dict[str, Any]], cap_s: float) -> float:
     if not decision or decision.get("cacheScope") != "sql":
         return 0.0
-    ttl = decision.get("ttlSeconds")
-    if not isinstance(ttl, (int, float)) or isinstance(ttl, bool) or ttl <= 0:
-        return 0.0
-    return float(min(ttl, cap_s))
+    ttl = _positive_number(decision.get("ttlSeconds"))
+    return min(ttl, cap_s) if ttl is not None else 0.0
 
 
 class Router:
@@ -236,8 +243,9 @@ class Router:
     def _poll_seconds(self) -> float:
         config = self._config or {}
         value = config.get("pollSeconds")
-        seconds = float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 60.0
-        return max(POLL_MIN_S, min(POLL_MAX_S, seconds))
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value):
+            return max(POLL_MIN_S, min(POLL_MAX_S, float(value)))
+        return 60.0
 
     def _config_loop(self) -> None:
         while not self._stop.is_set():
@@ -289,8 +297,8 @@ class Router:
         return all(p.get("sendParamValues") is not False for p in policies or [])
 
     def ttl_cap_s(self) -> float:
-        value = (self._config or {}).get("decisionTtlSeconds")
-        return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 else DEFAULT_TTL_S
+        value = _positive_number((self._config or {}).get("decisionTtlSeconds"))
+        return value if value is not None else DEFAULT_TTL_S
 
     # -- decide ----------------------------------------------------------------------------
     def decide(self, cache_key: str, request: Dict[str, Any]) -> Optional[Dict[str, Any]]:

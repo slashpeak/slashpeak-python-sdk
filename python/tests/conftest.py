@@ -65,8 +65,8 @@ RES = "projects/admin/locations/US/reservations/etl"
 
 
 class FakeError(Exception):
-    def __init__(self, code: int, reason: str = "invalid") -> None:
-        super().__init__(f"HTTP {code}")
+    def __init__(self, code: int, reason: str = "invalid", message: str = "") -> None:
+        super().__init__(f"HTTP {code} {message}".strip())
         self.code = code
         self.errors = [{"reason": reason, "message": "secret value 'ann@example.com'"}]
 

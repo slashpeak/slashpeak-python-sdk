@@ -125,7 +125,7 @@ def test_4xx_on_unchanged_request_is_raised(router, transport):
 def test_query_path_sets_top_level_fields_and_new_request_id_on_fallback(router, transport):
     transport.decide_replies = [decision("set_reservation", RES, label="m_d1-x")]
     conn = FakeConnection()
-    conn.fail_with = [FakeError(400)]
+    conn.fail_with = [FakeError(403, "accessDenied", "Access Denied: Reservation projects/admin/locations/US/reservations/etl")]
     body = {"query": "SELECT 1", "requestId": "req-1", "location": "US"}
     run(router, conn, path="/projects/p/queries", data=body)
     assert conn.sent[0]["data"]["reservation"] == RES
@@ -253,3 +253,19 @@ def test_fork_child_gets_fresh_locks():
     finally:
         old_pending._lock.release()
         sdk.uninstall()
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["Division by zero: 1 / 0", "Access Denied: Table p:d.t", "Syntax error: Unexpected keyword"],
+)
+def test_query_path_never_reruns_a_query_that_ran(router, transport, message):
+    # jobs.query returns a 4xx for a query that ran and failed; a re-run would bill it twice.
+    transport.decide_replies = [decision("set_reservation", RES, label="m_d1-x")]
+    conn = FakeConnection()
+    conn.fail_with = [FakeError(400, "invalidQuery", message)]
+    with pytest.raises(FakeError):
+        run(router, conn, path="/projects/p/queries", data={"query": "SELECT 1/0", "requestId": "r", "location": "US"})
+    assert len(conn.sent) == 1
+    (event,) = events(router)
+    assert event["state"] == "insert_error" and "Division" not in str(event)

@@ -65,7 +65,8 @@ def test_cache_ttl_scope_and_cap():
     clock.t += 2  # capped at 60 s, not the 600 the reply asked for
     cache.get_or_fetch("a", fetch(body), ttl_cap_s=60, wait_s=0.5)
     assert len(calls) == 2
-    for bad in (decision(scope="none").body, decision(ttl=0).body, decision(ttl=-5).body, None):
+    nan, inf = float("nan"), float("inf")
+    for bad in (decision(scope="none").body, decision(ttl=0).body, decision(ttl=-5).body, decision(ttl=nan).body, decision(ttl="60").body, None):
         calls.clear()
         cache.get_or_fetch("b", fetch(bad), 60, 0.5)
         cache.get_or_fetch("b", fetch(bad), 60, 0.5)
@@ -137,7 +138,7 @@ def test_poll_config_uses_etag(router, transport):
 
 
 def test_poll_seconds_bounded(router):
-    for value, want in ((0, 10.0), (-1, 10.0), (10**6, 600.0), ("x", 60.0), (True, 60.0)):
+    for value, want in ((0, 10.0), (-1, 10.0), (10**6, 600.0), ("x", 60.0), (True, 60.0), (float("nan"), 60.0), (float("inf"), 60.0)):
         config(router, {"pollSeconds": value})
         assert router._poll_seconds() == want
 
@@ -168,3 +169,21 @@ def test_client_at_least():
     assert client_at_least("0.10.0", "0.9.9")
     assert not client_at_least("0.1.0", "0.2.0")
     assert client_at_least("1.0.0rc1", None)
+
+
+def test_ttl_cap_ignores_bad_values(router):
+    for value in (float("nan"), float("inf"), 0, -1, "60", True, None):
+        config(router, {"decisionTtlSeconds": value})
+        assert router.ttl_cap_s() == 60.0
+    config(router, {"decisionTtlSeconds": 30})
+    assert router.ttl_cap_s() == 30.0
+
+
+def test_infinite_ttl_is_capped():
+    clock = Clock()
+    cache = DecisionCache(clock)
+    cache.get_or_fetch("a", lambda: decision(ttl=float("inf")).body, ttl_cap_s=60, wait_s=0.5)
+    clock.t += 61
+    calls = []
+    cache.get_or_fetch("a", lambda: calls.append(1) or decision().body, ttl_cap_s=60, wait_s=0.5)
+    assert calls == [1]

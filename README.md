@@ -57,11 +57,13 @@ slashpeak doctor --latency  # also 20 warm round trips
   example no permission on the reservation), the SDK runs your original request once, with the same
   job id, and reports `fallback`. On the `jobs.query` path (`query_and_wait`), BigQuery also returns a
   4xx for a query that ran and failed, so the SDK re-runs only when the error names the reservation or
-  a label. A failed query is never run twice.
+  a label. When the reservation was deleted, BigQuery answers `jobs.insert` with a job that failed at
+  once (nothing ran): the SDK runs your original request once under a new job id (`<your id>_fb` and 8
+  characters). A failed query is never run twice.
 - **PII is masked before anything leaves your process**: emails, phone numbers, IP addresses, and the
   patterns you add in SlashPeak → Settings → Privacy. Backtick-quoted names are left alone.
 - **Never touched:** jobs with an explicit `reservation`, dry runs, load, copy, extract and continuous
-  jobs, and SQL with `/* slashpeak:off */`. To skip one block of code: `with slashpeak.bigquery.bypass(): ...`
+  jobs, SQL over 256 KB, and SQL with `/* slashpeak:off */`. To skip one block of code: `with slashpeak.bigquery.bypass(): ...`
 - **No extra BigQuery calls.** Job results are read from responses the library already fetches.
 - **Never logs** SQL, values or keys.
 

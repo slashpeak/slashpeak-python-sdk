@@ -11,7 +11,9 @@ pandas-gbq and bigframes. Rules (plans: "SDKs"):
   check can find the job.
 * After a 4xx at insert on a changed request (never 408, 409 or 429), run the
   original request once, then report ``fallback``. Never re-send a changed
-  request after a 5xx or a timeout.
+  request after a 5xx or a timeout. jobs.insert can also answer 200 with a job
+  that failed at once because the reservation is not found (nothing ran):
+  run the original once under a new job id.
 * Never change the caller's dict: the hook sends copies.
 * Read job state only from responses the library already fetches. No extra
   BigQuery calls.
@@ -267,18 +269,40 @@ class Hook:
             if event:
                 router.emit({**event, "state": "insert_error", "errorReason": _reason_of(error)})
             raise
+        if changed is not None and kind == "insert" and _refused_reservation(changed, response):
+            return self._fallback(router, original, conn, args, kwargs, plan, event, None, new_job_id=True)
         if event:
             self._after_submit(router, kind, event, response)
         return response
 
-    def _fallback(self, router: Router, original: Callable[..., Any], conn: Any, args: Tuple[Any, ...], kwargs: Dict[str, Any], plan: Dict[str, Any], event: Optional[Dict[str, Any]], error: BaseException) -> Any:
-        """The changed request got a 4xx, so no job was made: run the original once."""
+    def _fallback(
+        self,
+        router: Router,
+        original: Callable[..., Any],
+        conn: Any,
+        args: Tuple[Any, ...],
+        kwargs: Dict[str, Any],
+        plan: Dict[str, Any],
+        event: Optional[Dict[str, Any]],
+        error: Optional[BaseException],
+        new_job_id: bool = False,
+    ) -> Any:
+        """The changed request was refused before it ran: run the original once.
+
+        ``new_job_id``: BigQuery made a failed job under the job id (a reservation
+        it could not find), so the original goes under a new id. The library reads
+        the job id back from the response.
+        """
         body = copy.deepcopy(plan["base"])
         if plan["kind"] == "query":
             # jobs.query dedupes on requestId; a fresh one makes sure BigQuery runs the original.
             body["requestId"] = str(uuid.uuid4())
+        if new_job_id:
+            ref = body["jobReference"]
+            ref["jobId"] = f"{str(ref['jobId'])[:1000]}_fb{uuid.uuid4().hex[:8]}"
         call_args, call_kwargs = _with_data(args, kwargs, body)
-        fallback = {**event, "state": "fallback", "errorReason": _reason_of(error)} if event else None
+        reason = _reason_of(error) if error is not None else "reservation_refused"
+        fallback = {**event, "state": "fallback", "errorReason": reason} if event else None
         try:
             response = original(conn, *call_args, **call_kwargs)
         except Exception:
@@ -314,6 +338,9 @@ class Hook:
                 router.emit({**event, "state": "submitted"})
                 return
             job_id = (response.get("jobReference") or {}).get("jobId")
+            if not job_id and kind == "query":
+                # jobs.query with optional job creation: no job, and INFORMATION_SCHEMA.JOBS lists the run under its queryId.
+                job_id = response.get("queryId")
             if isinstance(job_id, str) and job_id:
                 event = {**event, "jobId": job_id[:256]}
             final = _final_state(kind, response)
@@ -349,6 +376,29 @@ class Hook:
                 router.emit({**event, **final})
         except Exception:  # noqa: BLE001
             logger.debug("slashpeak event skipped", extra={"code": "observe_error"})
+
+
+def _refused_reservation(changed: Dict[str, Any], response: Any) -> bool:
+    """jobs.insert answered 200 with a job that failed at once because of the reservation we set.
+
+    BigQuery makes such a job when the reservation is not found (checked 2026-11-03,
+    plans/JOB_ROUTER_SPIKES.md spike 1): state DONE, an error naming the reservation,
+    and no query statistics, so nothing ran or billed. The message is read here, never
+    sent or logged.
+    """
+    if not changed.get("configuration", {}).get("reservation") or not isinstance(response, dict):
+        return False
+    status = response.get("status")
+    if not isinstance(status, dict) or status.get("state") != "DONE":
+        return False
+    error = status.get("errorResult")
+    if not isinstance(error, dict) or error.get("reason") != "invalid":
+        return False
+    if not re.search(r"\breservation\b", str(error.get("message") or ""), re.IGNORECASE):
+        return False
+    stats = response.get("statistics") or {}
+    query_stats = stats.get("query") if isinstance(stats, dict) else None
+    return not (isinstance(query_stats, dict) and (query_stats.get("totalBytesProcessed") or query_stats.get("totalSlotMs")))
 
 
 def _final_state(kind: str, response: Dict[str, Any]) -> Optional[Dict[str, Any]]:

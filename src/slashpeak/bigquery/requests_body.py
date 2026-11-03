@@ -18,7 +18,8 @@ from slashpeak._version import __version__
 from slashpeak._core.mask import Masker
 
 API_VERSION = 1
-MAX_SQL_BYTES = 1024 * 1024
+#: SQL over this is never sent: the router keeps it unread (masking cost grows with size; spike 11, 2026-11-03).
+MAX_SQL_BYTES = 256 * 1024
 MAX_PARAMS = 1000
 #: ``/* slashpeak:off */`` anywhere in the SQL opts the job out (same rule as the server).
 OPT_OUT = re.compile(r"/\*\s*slashpeak\s*:\s*off\s*\*/", re.IGNORECASE)

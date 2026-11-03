@@ -102,6 +102,68 @@ def test_4xx_on_changed_request_falls_back_once_with_same_job_id(router, transpo
     assert "ann@example.com" not in str(event)
 
 
+def _refused_job(body, message="User specified reservation projects/admin/locations/US/reservations/etl is not found."):
+    """What BigQuery answers (200) for a reservation it cannot find (spike 1, 2026-11-03)."""
+    return {
+        "jobReference": body["jobReference"],
+        "status": {"state": "DONE", "errorResult": {"reason": "invalid", "message": message}},
+        "statistics": {"creationTime": "1", "startTime": "2", "endTime": "2", "query": {}},
+    }
+
+
+def test_job_failed_for_missing_reservation_reruns_original_under_new_job_id(router, transport):
+    transport.decide_replies = [decision("set_reservation", RES, label="m_d1-x")]
+    conn = FakeConnection()
+    conn.responses = [_refused_job(insert_body())]
+    _, response = run(router, conn, data=insert_body())
+    assert len(conn.sent) == 2
+    retry = conn.sent[1]["data"]
+    assert "reservation" not in retry["configuration"] and "labels" not in retry["configuration"]
+    assert retry["jobReference"]["jobId"].startswith("job_1_fb")
+    assert response["jobReference"]["jobId"] == retry["jobReference"]["jobId"]
+    (event,) = events(router)
+    assert event["state"] == "fallback" and event["errorReason"] == "reservation_refused"
+    assert event["jobId"] == retry["jobReference"]["jobId"]
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        # The query ran and failed on its own (a SQL error): never re-run, it could bill twice.
+        {"status": {"state": "DONE", "errorResult": {"reason": "invalidQuery", "message": "Syntax error"}}, "statistics": {}},
+        # An error that names the reservation but the query ran (statistics filled).
+        {"status": {"state": "DONE", "errorResult": {"reason": "invalid", "message": "reservation busy"}}, "statistics": {"query": {"totalBytesProcessed": "10"}}},
+        # Other refusals that do not name the reservation (for example max_slots) are left alone.
+        {"status": {"state": "DONE", "errorResult": {"reason": "invalid", "message": "max_slots field is not yet supported."}}, "statistics": {}},
+    ],
+    ids=["sql-error", "ran", "other-invalid"],
+)
+def test_other_failed_jobs_are_not_rerun(router, transport, response):
+    transport.decide_replies = [decision("set_reservation", RES, label="m_d1-x")]
+    conn = FakeConnection()
+    conn.responses = [{"jobReference": insert_body()["jobReference"], **response}]
+    run(router, conn, data=insert_body())
+    assert len(conn.sent) == 1
+    assert [e["state"] for e in events(router)] == ["failed"]
+
+
+def test_refused_reservation_on_unchanged_request_is_left_alone(router, transport):
+    transport.decide_replies = [decision("keep")]
+    conn = FakeConnection()
+    conn.responses = [_refused_job(insert_body())]
+    run(router, conn, data=insert_body())
+    assert len(conn.sent) == 1
+
+
+def test_query_without_job_reports_query_id(router, transport):
+    transport.decide_replies = [decision("keep", mode="shadow", label="s_d1-x")]
+    conn = FakeConnection()
+    conn.responses = [{"queryId": "abc%1a1a22f7106", "jobComplete": True}]
+    run(router, conn, path="/projects/p/queries", data={"query": "SELECT 1", "location": "US", "jobCreationMode": "JOB_CREATION_OPTIONAL"})
+    (event,) = events(router)
+    assert event["state"] == "done" and event["jobId"] == "abc%1a1a22f7106"
+
+
 @pytest.mark.parametrize("code", [409, 429, 500, 503])
 def test_no_fallback_on_conflict_rate_limit_or_5xx(router, transport, code):
     transport.decide_replies = [decision("set_reservation", RES, label="m_d1-x")]

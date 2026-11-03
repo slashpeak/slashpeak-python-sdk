@@ -103,6 +103,9 @@ def test_not_routed_cases():
     assert build(body=insert_body("/* slashpeak:off */ SELECT 1")) is None
     assert build(body=insert_body("   ")) is None
     assert build(body=insert_body("SELECT '" + "x" * (1024 * 1024) + "'")) is None
+    # Over 256 KiB the router would keep it unread, so the SDK does not send it (spike 11).
+    assert build(body=insert_body("SELECT '" + "x" * (256 * 1024) + "'")) is None
+    assert build(body=insert_body("SELECT '" + "x" * (200 * 1024) + "'")) is not None
     assert build_decide_request(kind="insert", project="p" * 200, body=insert_body(), masker=builtin_masker(), send_values=True, request_id="r", job_id="j") is None
 
 

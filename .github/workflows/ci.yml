@@ -16,7 +16,8 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # why: ubuntu-latest (26.04) has no Python 3.9, which the package still supports.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false

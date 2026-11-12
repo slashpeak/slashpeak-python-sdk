@@ -14,6 +14,9 @@ pandas-gbq and bigframes. Rules (plans: "SDKs"):
   request after a 5xx or a timeout. jobs.insert can also answer 200 with a job
   that failed at once because the reservation is not found (nothing ran):
   run the original once under a new job id.
+* A move to on-demand (``reservation: none``, jobs.query only) carries a bytes
+  cap. If BigQuery stops the job on that cap (before it bills), run the
+  original once, then report ``fallback``.
 * Never change the caller's dict: the hook sends copies.
 * Read job state only from responses the library already fetches. No extra
   BigQuery calls.
@@ -31,6 +34,7 @@ from collections import OrderedDict
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from slashpeak.bigquery.requests_body import INSERT_PATH, QUERY_PATH, build_decide_request
+from slashpeak._core import runtime
 from slashpeak._core.router import DecisionCache, Router
 from slashpeak._core.settings import stricter_mode
 
@@ -48,6 +52,11 @@ _NO_FALLBACK = {408, 409, 429}
 #: jobs.query reports a query that ran and failed as a 4xx too, so a re-run there could bill twice.
 #: It re-runs only when BigQuery names a field we changed. The message is read here, never sent or logged.
 _OUR_FIELDS = re.compile(r"reservation|label", re.IGNORECASE)
+#: The job's ``reservation`` value that runs it on-demand.
+ON_DEMAND = "none"
+_BYTES_CAP = re.compile(r"^\d{1,19}$")
+#: BigQuery's reason when ``maximumBytesBilled`` stops a job; it checks before the job bills.
+BYTES_CAP_REASON = "bytesBilledLimitExceeded"
 PENDING_MAX = 10000
 PENDING_TTL_S = 24 * 3600.0
 
@@ -79,10 +88,13 @@ def _reason_of(error: BaseException) -> str:
     return _REASON.sub("", reason)[:64]
 
 
-def _may_fall_back(kind: str, code: Optional[int], error: BaseException) -> bool:
-    """jobs.insert: a 4xx means no job was made. jobs.query: only when the error names our change."""
+def _may_fall_back(kind: str, code: Optional[int], error: BaseException, capped: bool = False) -> bool:
+    """jobs.insert: a 4xx means no job was made. jobs.query: only when the error names our change,
+    or when the bytes cap we set stopped it (BigQuery checks the cap before the job bills)."""
     if code is None or not 400 <= code < 500 or code in _NO_FALLBACK:
         return False
+    if capped and _reason_of(error) == BYTES_CAP_REASON:
+        return True
     if kind == "insert":
         return True
     try:
@@ -90,6 +102,17 @@ def _may_fall_back(kind: str, code: Optional[int], error: BaseException) -> bool
     except Exception:  # noqa: BLE001
         return False
     return bool(_OUR_FIELDS.search(text))
+
+
+def _bytes_cap_of(kind: str, body: Dict[str, Any]) -> Any:
+    target = body.get("configuration") if kind == "insert" else body
+    query = target.get("query") if kind == "insert" and isinstance(target, dict) else target
+    return query.get("maximumBytesBilled") if isinstance(query, dict) else None
+
+
+def _added_bytes_cap(kind: str, base: Dict[str, Any], changed: Optional[Dict[str, Any]]) -> bool:
+    """True when the hook set ``maximumBytesBilled`` (the original had none)."""
+    return changed is not None and _bytes_cap_of(kind, base) is None and _bytes_cap_of(kind, changed) is not None
 
 
 def _status_code(error: BaseException) -> Optional[int]:
@@ -171,7 +194,7 @@ class Hook:
                 return None
         elif data.get("dryRun") or data.get("continuous") or data.get("reservation"):
             return None
-        if not router.may_decide(project):
+        if not runtime.job_allowed() or not router.may_decide(project):
             return None
         masker = router.masker()
         if masker is None:
@@ -222,7 +245,14 @@ class Hook:
         action = decision.get("action")
         reservation = decision.get("reservation")
         mode = stricter_mode(router.settings.mode, decision.get("mode"))
-        move = action == "set_reservation" and mode == "active" and isinstance(reservation, str) and bool(_RESERVATION.match(reservation))
+        # On-demand only on jobs.query: the one path that can re-run a job its bytes cap stopped.
+        on_demand = reservation == ON_DEMAND and kind == "query"
+        move = (
+            action == "set_reservation"
+            and mode == "active"
+            and isinstance(reservation, str)
+            and (bool(_RESERVATION.match(reservation)) or on_demand)
+        )
         labels = decision.get("labels")
         route = labels.get(LABEL_KEY) if isinstance(labels, dict) else None
         if action == "set_reservation" and not move:
@@ -235,6 +265,12 @@ class Hook:
         target = changed["configuration"] if kind == "insert" else changed
         if move:
             target["reservation"] = reservation
+        cap = decision.get("maximumBytesBilled")
+        if move and on_demand and target.get("maximumBytesBilled") is None:
+            # A move to on-demand always comes with the cap; without one, keep the job where it is.
+            if not (isinstance(cap, str) and _BYTES_CAP.match(cap)):
+                return None
+            target["maximumBytesBilled"] = cap
         if route is not None:
             current = target.get("labels")
             current = dict(current) if isinstance(current, dict) else {}
@@ -264,7 +300,7 @@ class Hook:
             response = original(conn, *call_args, **call_kwargs)
         except Exception as error:
             code = _status_code(error)
-            if changed is not None and _may_fall_back(kind, code, error):
+            if changed is not None and _may_fall_back(kind, code, error, _added_bytes_cap(kind, base, changed)):
                 return self._fallback(router, original, conn, args, kwargs, plan, event, error)
             if event:
                 router.emit({**event, "state": "insert_error", "errorReason": _reason_of(error)})

@@ -17,6 +17,9 @@ from typing import Any, Dict, List, Optional
 from slashpeak._version import __version__
 from slashpeak._core.mask import Masker
 
+#: This call path re-runs the original job once when the bytes cap the router set stops it.
+CAPABILITY_RERUN_BYTES_CAP = "rerun_bytes_cap"
+
 API_VERSION = 1
 #: SQL over this is never sent: the router keeps it unread (masking cost grows with size; spike 11, 2026-11-03).
 MAX_SQL_BYTES = 256 * 1024
@@ -183,6 +186,9 @@ def build_decide_request(
         "client": {"sdk": "python", "version": __version__, "library": _library()},
         "query": q,
     }
+    if kind == "query":
+        # Only jobs.query can re-run a job the bytes cap stopped: the error comes back in the same call.
+        out["client"]["capabilities"] = [CAPABILITY_RERUN_BYTES_CAP]
     if job_id:
         out["jobId"] = job_id
     loc = _short(location, 64)

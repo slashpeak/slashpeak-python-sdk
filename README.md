@@ -49,6 +49,8 @@ slashpeak doctor --latency  # also 20 warm round trips
 | `SLASHPEAK_SEND_PARAM_VALUES` | on | Send query parameter values (masked first). Off if this or the Job Router page says off. |
 | `HTTPS_PROXY`, `NO_PROXY` | | Honored. |
 
+On Airflow, a Connection and a Variable can set the key, the mode and a DAG allowlist. See [Airflow](#airflow).
+
 ## Safety rules
 
 - **Fail open.** Any error, or no answer within 500 ms (DNS included), and the job runs exactly as
@@ -60,6 +62,10 @@ slashpeak doctor --latency  # also 20 warm round trips
   a label. When the reservation was deleted, BigQuery answers `jobs.insert` with a job that failed at
   once (nothing ran): the SDK runs your original request once under a new job id (`<your id>_fb` and 8
   characters). A failed query is never run twice.
+- **Move to on-demand (0.2.0 and later, off until you turn it on in SlashPeak).** Only on the
+  `jobs.query` path. The SDK sets `reservation: none` and a bytes cap (`maximumBytesBilled`) when your
+  job has none. If BigQuery stops the job on that cap, nothing was billed: the SDK runs your original
+  request once and reports `fallback`. If your job has its own cap, the SDK keeps it and never re-runs.
 - **PII is masked before anything leaves your process**: emails, phone numbers, IP addresses, and the
   patterns you add in SlashPeak → Settings → Privacy. Backtick-quoted names are left alone.
 - **Never touched:** jobs with an explicit `reservation`, dry runs, load, copy, extract and continuous
@@ -74,6 +80,78 @@ slashpeak doctor --latency  # also 20 warm round trips
 - No hidden retries and no redirects. No cookies. TLS is always verified.
 - Fork safe (Airflow, Celery, gunicorn): a child process builds its own connections and threads.
 - Events are batched every 2 s (at most 100 per call, bounded queue) and flushed for at most 1 s at exit.
+
+## Airflow
+
+```bash
+pip install "slashpeak[airflow]"
+```
+
+Install it wherever tasks run (every worker; with the LocalExecutor, the scheduler). Airflow finds the
+`slashpeak` plugin on its own through the `airflow.plugins` entry point. Nothing changes in your DAGs:
+when Airflow loads plugins, the plugin turns on the BigQuery hook for the whole process. Tested on
+Airflow 2.10 and 3.x.
+
+The `airflow` extra installs the same packages as `bigquery`. It does not list `apache-airflow`: Airflow
+is already installed where the plugin runs, and Airflow must be installed with its own constraints file.
+A plain `pip install` that pulls Airflow could upgrade or downgrade it, or hundreds of its packages.
+
+**API key.** Put it in the password of the Connection `slashpeak_default` (UI, CLI or your secrets
+backend). Without that Connection, the SDK reads `SLASHPEAK_API_KEY`.
+
+```bash
+airflow connections add slashpeak_default --conn-type generic --conn-password "<API key>"
+```
+
+**Mode and DAG allowlist.** Optional. The Variable `slashpeak_router` holds JSON:
+
+```bash
+airflow variables set slashpeak_router '{"mode": "shadow", "dags": ["daily_marts", "hourly_events"]}'
+```
+
+- `mode`: `off`, `shadow` or `active`. The strictest of this, `SLASHPEAK_MODE` and the Job Router page
+  wins. An unknown value counts as `off`.
+- `dags`: only jobs from these DAG ids go to the router. Jobs from other DAGs, and jobs outside a task,
+  run exactly as written with no router call. No `dags`, or an empty list, means every DAG.
+- If the Variable is not valid JSON, or `dags` is not a list of strings, it is ignored and the
+  environment settings apply.
+- The Connection and Variable are read once per process, when the plugin loads. Restart the workers to
+  apply a change everywhere.
+
+**Per job.** The SDK reads `AIRFLOW_CTX_DAG_ID`, `AIRFLOW_CTX_TASK_ID` and `AIRFLOW_CTX_DAG_RUN_ID` when
+each job starts (one worker process runs many tasks) and sends them with the decide call, so the Job
+Router page can show decisions per DAG and task.
+
+**Fail open.** The plugin never fails a task or a worker. If Airflow cannot answer for the Connection or
+Variable (no database yet, no access, an error, or over 5 s), the SDK uses the environment settings. It
+never logs SQL, values or keys.
+
+**Workers that skip plugins.** Add one line to `airflow_local_settings.py`:
+
+```python
+import slashpeak.airflow; slashpeak.airflow.install()
+```
+
+Airflow runs that file before it opens its database, so there the SDK sees only environment variables
+and secrets backends: set `SLASHPEAK_API_KEY` (or `AIRFLOW_CONN_SLASHPEAK_DEFAULT`) and, if you use it,
+`AIRFLOW_VAR_SLASHPEAK_ROUTER`. If the plugin loads later in the same process, it reads the Connection
+and Variable again.
+
+**Cloud Composer.**
+
+- Install from PyPI: in the environment's **PyPI packages** tab, add `slashpeak` with `[airflow]` as
+  extras, or run
+  `gcloud composer environments update ENV --location LOCATION --update-pypi-package "slashpeak[airflow]"`.
+  Composer images already include google-cloud-bigquery 3.x and requests, so pip normally adds only
+  `slashpeak`.
+- Set the key in the Connection `slashpeak_default`, or in Secret Manager if the environment uses it as
+  the secrets backend.
+- Private IP environments have no internet access by default. The workers need egress to
+  `https://router.slashpeak.com` (port 443): add Cloud NAT to the environment's VPC subnet. Without egress
+  nothing breaks, but no job is routed (each call times out after 500 ms, then the SDK pauses for 30 s
+  after 5 failures).
+- To check the path from a worker, run `slashpeak doctor` in a task, for example
+  `BashOperator(task_id="slashpeak_doctor", bash_command="slashpeak doctor")`.
 
 ## Contract
 
@@ -90,6 +168,9 @@ The SDK never fingerprints queries. The server does that, so a fingerprint chang
 uv venv && uv pip install -e '.[test]'
 .venv/bin/python -m pytest
 ```
+
+The Airflow tests use a fake `airflow` module. CI also installs real Airflow 2.10 and 3.x, loads the
+plugin and runs a task (`tests/airflow_smoke.py`, `tests/airflow_smoke_dag.py`).
 
 ## Security
 

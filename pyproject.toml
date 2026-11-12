@@ -11,12 +11,13 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 requires-python = ">=3.9"
 authors = [{ name = "SlashPeak", email = "slashpeak@proton.me" }]
-keywords = ["bigquery", "cost", "reservations", "finops"]
+keywords = ["bigquery", "cost", "reservations", "finops", "airflow"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
   "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
+  "Framework :: Apache Airflow",
   "Topic :: Database",
 ]
 dependencies = [
@@ -26,6 +27,9 @@ dependencies = [
 
 [project.optional-dependencies]
 bigquery = ["google-cloud-bigquery>=3.0,<4"]
+# Same as `bigquery`. Airflow is not listed: it is already installed where the plugin runs,
+# and pip must never upgrade or downgrade it outside its constraints file.
+airflow = ["google-cloud-bigquery>=3.0,<4"]
 test = ["pytest>=7", "google-cloud-bigquery>=3.0,<4"]
 
 [project.urls]
@@ -34,6 +38,9 @@ Source = "https://github.com/slashpeak/slashpeak-python-sdk"
 
 [project.scripts]
 slashpeak = "slashpeak.cli:main"
+
+[project.entry-points."airflow.plugins"]
+slashpeak = "slashpeak.airflow:SlashPeakPlugin"
 
 [tool.hatch.version]
 path = "src/slashpeak/_version.py"

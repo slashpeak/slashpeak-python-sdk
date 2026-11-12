@@ -38,3 +38,47 @@ jobs:
           fi
       - name: Test
         run: python -m pytest -W ignore::FutureWarning
+
+  airflow:
+    # Real Airflow: the plugin loads through its entry point, and a task runs with the hook on.
+    name: airflow ${{ matrix.airflow }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        airflow: ["2.10.5", "3.0.6", "3.4.0"]
+    env:
+      AIRFLOW_HOME: ${{ github.workspace }}/.airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      SLASHPEAK_API_KEY: ci-test-key
+      # Nothing listens here: router calls fail at once and jobs run unchanged.
+      SLASHPEAK_ENDPOINT: http://localhost:9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install "apache-airflow==${{ matrix.airflow }}" -e '.[airflow]' \
+            --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-${{ matrix.airflow }}/constraints-3.12.txt"
+      - name: Load the plugin
+        env:
+          AIRFLOW_VAR_SLASHPEAK_ROUTER: '{"mode": "shadow", "dags": ["dag_a"]}'
+        run: |
+          python tests/airflow_smoke.py
+          airflow plugins | grep slashpeak
+      - name: Run a task
+        # `airflow tasks test` exits 0 on a failed task in Airflow 3, so the step checks the output.
+        run: |
+          mkdir -p "$AIRFLOW_HOME/dags"
+          cp tests/airflow_smoke_dag.py "$AIRFLOW_HOME/dags/"
+          airflow db migrate
+          airflow variables set slashpeak_router '{"mode": "shadow", "dags": ["dag_a"]}'
+          for dag in dag_a dag_b; do
+            airflow tasks test "$dag" check > out.txt 2>&1 || true
+            grep -q "slashpeak smoke ok: $dag" out.txt || { cat out.txt; exit 1; }
+            echo "slashpeak smoke ok: $dag"
+          done

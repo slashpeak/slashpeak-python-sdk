@@ -118,6 +118,15 @@
                       "library": {
                         "type": "string",
                         "maxLength": 256
+                      },
+                      "capabilities": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "description": "What this call path can do. `rerun_bytes_cap`: it re-runs the original job once when the bytes cap stops it (needed for `reservation: none` moves)."
                       }
                     }
                   },
@@ -159,8 +168,8 @@
                       "sql": {
                         "type": "string",
                         "minLength": 1,
-                        "maxLength": 1048576,
-                        "description": "Masked by the SDK first."
+                        "maxLength": 983040,
+                        "description": "Masked by the SDK first. Over 262144 bytes the job is kept (too_large)."
                       },
                       "parameterMode": {
                         "type": "string",
@@ -295,7 +304,12 @@
                     },
                     "reservation": {
                       "type": "string",
-                      "description": "`projects/{p}/locations/{l}/reservations/{r}`, or `none`."
+                      "description": "`projects/{p}/locations/{l}/reservations/{r}`, or `none`. With `action = set_reservation`, `none` means: run it on-demand."
+                    },
+                    "maximumBytesBilled": {
+                      "type": "string",
+                      "pattern": "^[0-9]+$",
+                      "description": "Set it on the job when the job has none (only with `reservation: none`). If BigQuery stops the job on it, re-run the original job once and send a `fallback` event."
                     },
                     "labels": {
                       "type": "object",

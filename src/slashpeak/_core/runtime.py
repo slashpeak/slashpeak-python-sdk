@@ -18,6 +18,7 @@ _router: Optional[Router] = None
 _users: Set[str] = set()
 _fork_callbacks: List[Callable[[], None]] = []
 _fork_hooked = False
+_job_filter: Optional[Callable[[], bool]] = None
 
 
 def current() -> Optional[Router]:
@@ -39,6 +40,23 @@ def on_fork(callback: Callable[[], None]) -> None:
     """Runs ``callback`` in a forked child, before the router resets."""
     if callback not in _fork_callbacks:
         _fork_callbacks.append(callback)
+
+
+def set_job_filter(check: Optional[Callable[[], bool]]) -> None:
+    """One process-wide check run before a job goes to the router (the Airflow DAG allowlist). None removes it."""
+    global _job_filter
+    _job_filter = check
+
+
+def job_allowed() -> bool:
+    """False when the job filter says skip, or fails: the job then runs unchanged."""
+    check = _job_filter
+    if check is None:
+        return True
+    try:
+        return bool(check())
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def acquire(user: str, settings: Optional[Settings] = None) -> Router:

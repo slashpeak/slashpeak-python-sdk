@@ -376,3 +376,59 @@ def test_same_settings_keep_the_router_new_settings_replace_it():
     runtime.release("bigquery")
     runtime.release("snowflake")
     assert runtime.current() is None
+
+
+def _on_demand(cap="20971520"):
+    reply = decision("set_reservation", "none", label="m_d1-x")
+    if cap is not None:
+        reply.body["maximumBytesBilled"] = cap
+    return reply
+
+
+def test_on_demand_move_sets_none_and_bytes_cap_on_jobs_query_only(router, transport):
+    transport.decide_replies = [_on_demand(), _on_demand()]
+    conn = FakeConnection()
+    run(router, conn, path="/projects/p/queries", data={"query": "SELECT 1", "requestId": "r1", "location": "US"})
+    sent = conn.sent[0]["data"]
+    assert sent["reservation"] == "none" and sent["maximumBytesBilled"] == "20971520"
+    assert transport.decides()[0]["body"]["client"]["capabilities"] == ["rerun_bytes_cap"]
+    # jobs.insert never moves to on-demand and never says it can re-run.
+    conn = FakeConnection()
+    run(router, conn, data=insert_body("SELECT 2"))
+    assert conn.sent[0]["data"] == insert_body("SELECT 2")
+    assert "capabilities" not in transport.decides()[-1]["body"]["client"]
+
+
+def test_on_demand_move_without_a_cap_keeps_the_job(router, transport):
+    transport.decide_replies = [_on_demand(cap=None)]
+    conn = FakeConnection()
+    body = {"query": "SELECT 1", "requestId": "r1", "location": "US"}
+    run(router, conn, path="/projects/p/queries", data=body)
+    assert conn.sent[0]["data"]["requestId"] == "r1" and "reservation" not in conn.sent[0]["data"]
+
+
+def test_on_demand_move_keeps_the_callers_own_cap(router, transport):
+    transport.decide_replies = [_on_demand()]
+    conn = FakeConnection()
+    run(router, conn, path="/projects/p/queries", data={"query": "SELECT 1", "requestId": "r1", "maximumBytesBilled": "5"})
+    assert conn.sent[0]["data"]["maximumBytesBilled"] == "5"
+
+
+def test_our_bytes_cap_stop_reruns_the_original_once(router, transport):
+    transport.decide_replies = [_on_demand()]
+    conn = FakeConnection()
+    conn.fail_with = [FakeError(400, "bytesBilledLimitExceeded", "Query exceeded limit for bytes billed")]
+    run(router, conn, path="/projects/p/queries", data={"query": "SELECT 1", "requestId": "r1", "location": "US"})
+    assert len(conn.sent) == 2
+    assert "reservation" not in conn.sent[1]["data"] and "maximumBytesBilled" not in conn.sent[1]["data"]
+    (event,) = events(router)
+    assert event["state"] == "fallback" and event["errorReason"] == "bytesBilledLimitExceeded"
+
+
+def test_callers_own_cap_stop_is_not_rerun(router, transport):
+    transport.decide_replies = [_on_demand()]
+    conn = FakeConnection()
+    conn.fail_with = [FakeError(400, "bytesBilledLimitExceeded", "Query exceeded limit for bytes billed")]
+    with pytest.raises(FakeError):
+        run(router, conn, path="/projects/p/queries", data={"query": "SELECT 1", "requestId": "r1", "maximumBytesBilled": "5"})
+    assert len(conn.sent) == 1
